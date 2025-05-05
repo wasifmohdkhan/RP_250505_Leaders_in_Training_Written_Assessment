@@ -1,5 +1,5 @@
 ---
-title: "Untitled"
+title: "Written Assessment - Training Program"
 output:
   pdf_document: default
   html_document: default
@@ -325,7 +325,7 @@ bldg_safty_insp_permit_2_LA_2 %>% head()
 
 ```{r}
 # Check if the contractor city is converted to 0 and 1
-table(bldg_safty_insp_permit_2_LA_2$contractor_city)
+table(bldg_safty_insp_permit_2_LA_2$contractor_city) %>% head()
 ```
 
 ## Now check the types of inspection outcome
@@ -373,7 +373,7 @@ bldg_safty_insp_permit_2_LA_3_insp_binary %>% head(15)
 # Create a contingency table
 contingency_table = table(bldg_safty_insp_permit_2_LA_3_insp_binary$contractor_city,
                            bldg_safty_insp_permit_2_LA_3_insp_binary$inspection_binary)
-print(contingency_table)
+print(contingency_table) %>% head()
 ```
 
 ```{r}
