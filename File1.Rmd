@@ -1,0 +1,384 @@
+---
+title: "Untitled"
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-05-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+# clear env
+```{r}
+rm(list = ls())
+```
+
+## Libraries
+```{r}
+library(tidyverse)
+library(here)
+
+```
+
+# create a new folder to save the data
+```{r}
+# # Create a new folder named "Data" in your working directory
+# dir.create(here("Data"), showWarnings = FALSE)
+# 
+# # Define the url and destination file path
+# url = "https://data.lacity.org/resource/9w5z-rg2h.csv"
+# dest_file = here("Data/lacity_data.csv")
+# 
+# # Download the CSV file to the new folder
+# download.file(url, destfile = dest_file, mode = "wb")
+# 
+# # Read the CSV file from the saved location
+# data = read.csv(dest_file)
+# 
+# # Preview the data
+# head(data)
+
+```
+### The HTTP address did not produe all the entries , so downloaded the data manually
+# Can not download the data from the 2nd link provided in the email
+
+# read data
+```{r}
+bldg_safty_insp_data = read_csv(here("Data", "Building_and_Safety_Inspections_20250505.csv")) %>% 
+  # clean names
+  janitor::clean_names()
+``` 
+
+
+```{r}
+bldg_safty_insp_data %>% head(50)
+```
+
+
+## Count the unique number of entries in each column
+```{r}
+bldg_safty_insp_data %>% 
+  summarise(across(everything(), ~ n_distinct(.)))
+```
+# convert to factors if entries are below a threshold
+```{r}
+bldg_safty_insp_data %>% 
+  mutate(across(where(~ is.character(.) && n_distinct(.) < 100), as.factor)) %>% 
+  head()
+```
+
+# Question 1
+
+## Summary Table for Permits vs Inspection results
+```{r}
+summary_table = bldg_safty_insp_data %>%
+  count(`permit_status`, `inspection_result`, sort = TRUE, name = "count")
+
+# Display the table
+summary_table
+```
+
+```{r}
+bldg_safty_insp_data %>%
+  count(`permit_status`, `inspection_result`, sort = TRUE, name = "count") %>% 
+  mutate(count_log = log1p(count)) %>% 
+# ggplot heatmap
+ggplot( aes(x = `inspection_result`, y = `permit_status`, fill = count_log)) +
+  geom_tile(color = "white") +
+  # geom_text(aes(label = count), size = 3) +
+  scale_fill_viridis_c(option = "C", name = "Log(count + 1)") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Heatmap of Permit Status vs Inspection Result",
+    x = "Inspection Result",
+    y = "Permit Status"
+  )
+```
+
+## for easy visualization and meaningful observations remove counts less than 100
+```{r, fig.width=7, fig.height=8}
+
+bldg_safty_insp_data %>%
+  count(`permit_status`, `inspection_result`, sort = TRUE, name = "count") %>% 
+  filter(count >100) %>% 
+  mutate(count_log = log1p(count)) %>% 
+# ggplot heatmap
+ggplot( aes(y = `inspection_result`, x = `permit_status`, fill = count_log)) +
+  geom_tile(color = "white") +
+  # geom_text(aes(label = count), size = 3) +
+  scale_fill_viridis_c(option = "C", direction = -1,  name = "Log(count + 1)") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Heatmap of Permit Status vs Inspection Result",
+    y = "Inspection Result",
+    x = "Permit Status"
+  )
+```
+
+# A new link for 2nd dataset is provided
+
+## downloaded this data manually
+
+### Read permit data in R
+```{r}
+bldg_permit_data = read_csv(here("Data", "Building_Permits_20250505.csv")) %>% 
+  # clean names
+  janitor::clean_names()
+```
+
+## 
+```{r}
+bldg_permit_data %>%  head()
+```
+
+
+## To check if the two datasets have some common addresses based on address columns
+
+```{r}
+# Find common rows based on 'permit' and 'address'
+bldg_safty_insp_permit = inner_join(bldg_safty_insp_data, bldg_permit_data,
+                          by = c("address"= "applicant_address_1")
+                          )
+
+print(bldg_safty_insp_permit)
+```
+## Some address have more than 2 entries and thats why we are getting more than 1 row for the same address there are more rows than the permit dataset
+We can now select the columns we are interested in and save the data
+```{r}
+bldg_safty_insp_permit_2 = bldg_safty_insp_permit %>% 
+  select(
+    address,
+    permit_status,
+    inspection_type,
+    inspection_result,
+    status,
+    permit_type,
+    contractor_city,
+    contractor_state,
+    applicant_address_3,
+    zone 
+    ) %>% 
+  # remove duplicates
+  distinct()
+bldg_safty_insp_permit_2 %>%  dim()
+```
+
+```{r}
+bldg_safty_insp_permit_2 %>% head(15)
+```
+
+## I notices that LOS ANGELES had multiple entries eg LOS ANGELES, CA, LOS ANGELES ,CA, Los Angeles, L.A., CA, etc.
+## The code below is to unify it
+```{r}
+bldg_safty_insp_permit_2 = bldg_safty_insp_permit_2 %>%
+  mutate(
+    applicant_address_3 = str_to_upper(applicant_address_3),                  # Make all uppercase
+    applicant_address_3 = str_replace_all(applicant_address_3, "[[:punct:]]", ""), # Remove punctuation
+    applicant_address_3 = str_squish(applicant_address_3),                   # Remove extra spaces
+    applicant_address_3 = case_when(
+      str_detect(applicant_address_3, "LOS ANGELES") ~ "LOS ANGELES, CA",
+      str_detect(applicant_address_3, "L A") ~ "LOS ANGELES, CA",
+      str_detect(applicant_address_3, "L\\.A") ~ "LOS ANGELES, CA",
+      str_detect(applicant_address_3, "LA CA") ~ "LOS ANGELES, CA",
+      str_detect(applicant_address_3, "LACA ") ~ "LOS ANGELES, CA",
+      is.na(applicant_address_3) ~ "UNKNOWN",
+      TRUE ~ applicant_address_3
+    )
+  )
+```
+
+
+## To get an idea of number of inspection by geography we can use applicant_address_3 which is the city
+## and we can also use zone
+
+```{r}
+# Count inspections by applicant_address_3
+inspection_freq = bldg_safty_insp_permit_2 %>%
+  count(applicant_address_3, name = "inspection_count") %>%
+  arrange(desc(inspection_count))
+
+print(inspection_freq)
+
+```
+
+## PLot for inspection frequency for top 20
+```{r}
+inspection_freq %>% 
+  # filter top 20 rows
+  slice_head(n = 20) %>% 
+  # Make names as factors to avoid alphabetical ordering
+  mutate(applicant_address_3 = factor(applicant_address_3, levels = inspection_freq$applicant_address_3)) %>%
+  ggplot(aes(x = applicant_address_3,  y = inspection_count)) +
+  geom_col(fill = "blue", alpha = 0.5) +
+  labs(title = "Number of Inspections by Applicant Address",
+       x = "Applicant Address", y = "Inspection Count") +
+  # rotate x-axis labels
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+## Lets try the same thing by the zone
+```{r}
+# Count inspections by zone
+inspection_freq_zone = bldg_safty_insp_permit_2 %>%
+  count(zone, name = "inspection_count") %>%
+  arrange(desc(inspection_count))
+print(inspection_freq_zone)
+```
+## PLot for inspection frequency for top 20
+```{r}
+inspection_freq_zone_plot = 
+  inspection_freq_zone %>% 
+  # filter top 20 rows
+  slice_head(n = 20) %>% 
+  # Make names as factors to avoid alphabetical ordering
+  mutate(zone = factor(zone, levels = inspection_freq_zone$zone)) %>%
+  ggplot(aes(x = zone,  y = inspection_count)) +
+  geom_col(fill = "blue", alpha = 0.5) +
+  labs(title = "Number of Inspections by Zone",
+       x = "Zone", y = "Inspection Count") +
+  # rotate x-axis labels
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+print(inspection_freq_zone_plot)
+```
+
+## Inspection result by applicant address, considered as geography
+```{r}
+inspection_result_tbl = bldg_safty_insp_permit_2 %>%
+  count(applicant_address_3, inspection_result, name = "count") %>% 
+  # order by inspection result
+  arrange(desc(count))
+
+# View the table
+print(inspection_result_tbl)
+```
+
+
+
+## for easy visualization and meaningful observations remove counts less than 200
+```{r, fig.width=12, fig.height=7}
+inspection_result_tbl %>%
+  filter(count > 200) %>%
+  mutate(
+    count_log = log1p(count),
+    applicant_address_3 = ifelse(is.na(applicant_address_3), "Unknown", applicant_address_3)
+  ) %>%
+  ggplot(aes(x = applicant_address_3, y = inspection_result, fill = count_log)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "C", direction = -1, name = "Log(count)") +
+  theme_bw(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Heatmap of Inspection Results Across Geographies",
+    x = "Applicant Address (Geography)",
+    y = "Inspection Result"
+  )
+```
+## To answer question 3 we will use only Los Angeles data
+
+```{r}
+bldg_safty_insp_permit_2_LA = bldg_safty_insp_permit_2 %>% 
+  filter(applicant_address_3 == "LOS ANGELES, CA") %>% 
+  # remove duplicates
+  distinct()
+bldg_safty_insp_permit_2_LA %>%  dim()
+
+bldg_safty_insp_permit_2_LA %>% head(15)
+
+```
+# Check if the naming of contractor city is unified
+```{r}
+bldg_safty_insp_permit_2_LA %>% 
+  count(contractor_city, name = "count") %>% 
+  arrange(desc(count)) %>% 
+  print(n=100)
+
+```
+Yes mostly it is
+
+# now convert the contractor data to 0 (not from Los Angeles) and 1 (from Los Angeles)
+```{r}
+bldg_safty_insp_permit_2_LA_2 = bldg_safty_insp_permit_2_LA %>%
+  mutate(
+    contractor_city_binary = case_when(
+      str_detect(contractor_city, "LOS ANGELES") ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+bldg_safty_insp_permit_2_LA_2 %>% head()
+```
+
+
+```{r}
+# Check if the contractor city is converted to 0 and 1
+table(bldg_safty_insp_permit_2_LA_2$contractor_city)
+```
+
+## Now check the types of inspection outcome
+```{r}
+inspection_result_count =
+bldg_safty_insp_permit_2_LA_2 %>% 
+  count(inspection_result, name = "count") %>% 
+  arrange(desc(count)) %>% 
+  filter (count > 1000) %>%
+  print(n=100)
+
+```
+## Now we will select them and convert them to binary based on success 1 or no success 0
+```{r}
+bldg_safty_insp_permit_2_LA_3 = bldg_safty_insp_permit_2_LA_2 %>% 
+  filter(inspection_result %in% inspection_result_count$inspection_result) %>%
+           # remove duplicates
+           distinct()
+bldg_safty_insp_permit_2_LA_3 %>% dim()
+bldg_safty_insp_permit_2_LA_3 %>% head(15)
+
+## Now we will convert the inspection result to binary
+bldg_safty_insp_permit_2_LA_3_insp_binary = bldg_safty_insp_permit_2_LA_3 %>%
+  mutate(
+    inspection_binary = case_when(
+      inspection_result %in% c("Approved", "Permit Finaled", "CofO Issued", 
+                               "OK for CofO", "OK to Issue CofO", "Completed", 
+                               "SGSOV Approved") ~ 1,
+      inspection_result %in% c("Insp Scheduled", "Partial Approval", 
+                               "Not Ready for Inspection", "Corrections Issued",
+                               "Partial Inspection", "Insp Cancelled", 
+                               "Conditional Approval", "Cancelled", 
+                               "No Access for Inspection", "SGSOV No Gas", 
+                               "CofO in Progress", "CofO on Hold", 
+                               "Off-Hour Fees Due", "Pending Review") ~ 0,
+      TRUE ~ NA_real_  # Handles NA or unmatched values
+    )
+  )
+bldg_safty_insp_permit_2_LA_3_insp_binary %>% dim()
+bldg_safty_insp_permit_2_LA_3_insp_binary %>% head(15)
+```
+
+# apply chi square test to see if there is a relationship between inspection result and contractor city
+```{r}
+# Create a contingency table
+contingency_table = table(bldg_safty_insp_permit_2_LA_3_insp_binary$contractor_city,
+                           bldg_safty_insp_permit_2_LA_3_insp_binary$inspection_binary)
+print(contingency_table)
+```
+
+```{r}
+chi_test_result = chisq.test(contingency_table)
+print(chi_test_result)
+```
+### It shows that the contractor from Los Angeles has a higher chance of getting a successful inspection result.
+But it hightly depends on how the variables were converted to binary. It will need to be checked with the domain expert.
